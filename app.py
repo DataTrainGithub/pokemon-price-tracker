@@ -39,6 +39,31 @@ def _image_to_data_uri(path_or_url: str) -> str:
         return f"data:{mime};base64,{base64.b64encode(p.read_bytes()).decode()}"
     return path_or_url  # remote URL fallback
 
+# Map country/language name → ISO 3166-1 alpha-2 code for flagcdn.com
+_COUNTRY_CODE = {
+    "Germany": "de", "Netherlands": "nl", "Belgium": "be",
+    "France": "fr", "United Kingdom": "gb", "Austria": "at",
+    "Italy": "it", "Spain": "es",
+}
+_LANGUAGE_CODE = {
+    "English": "gb", "French": "fr", "German": "de",
+    "Spanish": "es", "Italian": "it", "Japanese": "jp",
+    "Portuguese": "pt", "Korean": "kr",
+}
+
+
+def _flag_img(code: str, label: str = "") -> str:
+    """Return an <img> tag for a flag from flagcdn.com."""
+    if not code:
+        return ""
+    return (
+        f'<img src="https://flagcdn.com/20x15/{code}.png" '
+        f'srcset="https://flagcdn.com/40x30/{code}.png 2x" '
+        f'width="20" height="15" alt="{label}" '
+        f'style="border-radius:2px;vertical-align:middle;">'
+    )
+
+
 # ---------------------------------------------------------------------------
 st.set_page_config(
     page_title="Pokémon Sealed Tracker",
@@ -723,19 +748,22 @@ with tab_all:
                     rows_html = ""
                     for o in offers:
                         price_str = feur(o.get("price_eur"))
-                        loc   = o.get("item_location", "")
-                        flag  = o.get("item_location_flag", "")
-                        lang_flag = o.get("language_flag", "")
+                        loc       = o.get("item_location", "")
+                        loc_code  = _COUNTRY_CODE.get(loc, "")
+                        loc_img   = _flag_img(loc_code, loc)
+                        lang      = o.get("language", "")
+                        lang_code = _LANGUAGE_CODE.get(lang, "")
+                        lang_img  = _flag_img(lang_code, lang)
                         seller_info = o.get("seller_info", "")
                         condition   = o.get("condition", "")
                         rows_html += (
                             f'<tr>'
                             f'<td><strong>{o.get("seller", "—")}</strong>'
                             f'<br><span style="font-size:0.68rem;color:#9ca3af">{seller_info}</span></td>'
-                            f'<td style="text-align:center;font-size:1rem">{flag}<br>'
+                            f'<td style="text-align:center">{loc_img}<br>'
                             f'<span style="font-size:0.68rem;color:#7c87a8">{loc}</span></td>'
-                            f'<td style="text-align:center;font-size:1rem">{lang_flag}<br>'
-                            f'<span style="font-size:0.68rem;color:#7c87a8">{o.get("language", "")}</span></td>'
+                            f'<td style="text-align:center">{lang_img}<br>'
+                            f'<span style="font-size:0.68rem;color:#7c87a8">{lang}</span></td>'
                             f'<td style="color:#64748b">{condition}</td>'
                             f'<td style="text-align:right;font-weight:600;color:#2d7d52">{price_str}</td>'
                             f'<td style="text-align:center;color:#9ca3af">{o.get("quantity", 1)}</td>'
