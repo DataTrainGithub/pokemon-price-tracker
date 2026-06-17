@@ -1,0 +1,52 @@
+name: Update Pokémon Prices
+
+on:
+  schedule:
+    # Every day at 03:00 UTC (off-peak for Cardmarket)
+    - cron: "0 3 * * *"
+  workflow_dispatch:   # allows manual trigger from GitHub Actions tab
+
+permissions:
+  contents: write      # needed to commit products.json back
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          # Install scraper deps only (no Streamlit/Playwright needed in CI)
+          pip install \
+            beautifulsoup4 \
+            lxml \
+            requests \
+            cloudscraper \
+            "curl-cffi>=0.7"
+
+      - name: Run price scraper
+        run: python scraper/cardmarket_scraper.py
+        env:
+          # Prevents Python from buffering stdout so logs appear in real-time
+          PYTHONUNBUFFERED: "1"
+
+      - name: Commit updated prices
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/products.json
+          # Only commit if there are actual changes
+          git diff --cached --quiet || \
+            git commit -m "chore: auto-update prices $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push

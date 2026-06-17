@@ -26,7 +26,9 @@
       "avg_30d_eur": 322.9,
       "avg_7d_eur": 394.25,
       "image_url": "data/images/furious-fists-etb.png",
-      "last_scraped": "2026-06-17T07:19:51.965139+00:00"
+      "last_scraped": "2026-06-17T10:24:37.508351+00:00",
+      "price_from_filtered_eur": 8000.0,
+      "available_filtered": 2
     },
     {
       "id": "ancient-origins-etb",
@@ -46,7 +48,9 @@
       "avg_30d_eur": 428.75,
       "avg_7d_eur": 1505.0,
       "image_url": "data/images/ancient-origins-etb.png",
-      "last_scraped": "2026-06-17T07:19:51.965139+00:00"
+      "last_scraped": "2026-06-17T10:24:37.508351+00:00",
+      "price_from_filtered_eur": 2350.0,
+      "available_filtered": 2
     },
     {
       "id": "generations-etb",
@@ -67,7 +71,9 @@
       "avg_30d_eur": 964.93,
       "avg_7d_eur": 1985.71,
       "image_url": "data/images/generations-etb.png",
-      "last_scraped": "2026-06-17T07:19:51.965139+00:00"
+      "last_scraped": "2026-06-17T10:24:37.508351+00:00",
+      "price_from_filtered_eur": 2999.0,
+      "available_filtered": 8
     },
     {
       "id": "fates-collide-etb",
@@ -1080,14 +1086,21 @@
       "type": "ETB",
       "release_date": "2025-10-17",
       "msrp_eur": 54.99,
-      "current_price_eur": 200.0,
+      "current_price_eur": 249.2,
       "reprint_status": "single_print",
       "months_to_oop": 10,
       "tags": [
         "pokemon_center_exclusive",
         "single_print_special"
       ],
-      "cardmarket_url": "https://www.cardmarket.com/en/Pokemon/Products/Elite-Trainer-Boxes/White-Flare-Pokemon-Center-Elite-Trainer-Box"
+      "cardmarket_url": "https://www.cardmarket.com/en/Pokemon/Products/Elite-Trainer-Boxes/White-Flare-Pokemon-Center-Elite-Trainer-Box",
+      "price_from_eur": 200.0,
+      "avg_30d_eur": 197.25,
+      "avg_7d_eur": 232.99,
+      "image_url": "data/images/white-flare-pc-etb.jpg",
+      "price_from_filtered_eur": 243.0,
+      "available_filtered": 53,
+      "last_scraped": "2026-06-17T10:24:37.508351+00:00"
     },
     {
       "id": "black-bolt-etb",
@@ -1095,13 +1108,20 @@
       "type": "ETB",
       "release_date": "2025-10-17",
       "msrp_eur": 44.99,
-      "current_price_eur": 44.99,
+      "current_price_eur": 104.37,
       "reprint_status": "standard_rotation",
       "months_to_oop": 10,
       "tags": [
         "standard"
       ],
-      "cardmarket_url": "https://www.cardmarket.com/en/Pokemon/Products/Elite-Trainer-Boxes/Black-Bolt-Elite-Trainer-Box"
+      "cardmarket_url": "https://www.cardmarket.com/en/Pokemon/Products/Elite-Trainer-Boxes/Black-Bolt-Elite-Trainer-Box",
+      "price_from_eur": 62.99,
+      "avg_30d_eur": 97.02,
+      "avg_7d_eur": 103.59,
+      "image_url": "data/images/black-bolt-etb.jpg",
+      "price_from_filtered_eur": 123.99,
+      "available_filtered": 479,
+      "last_scraped": "2026-06-17T10:24:37.508351+00:00"
     },
     {
       "id": "black-bolt-pc-etb",
@@ -1109,14 +1129,19 @@
       "type": "ETB",
       "release_date": "2025-10-17",
       "msrp_eur": 54.99,
-      "current_price_eur": 210.0,
+      "current_price_eur": 261.03,
       "reprint_status": "single_print",
       "months_to_oop": 10,
       "tags": [
         "pokemon_center_exclusive",
         "single_print_special"
       ],
-      "cardmarket_url": "https://www.cardmarket.com/en/Pokemon/Products/Elite-Trainer-Boxes/Black-Bolt-Pokemon-Center-Elite-Trainer-Box"
+      "cardmarket_url": "https://www.cardmarket.com/en/Pokemon/Products/Elite-Trainer-Boxes/Black-Bolt-Pokemon-Center-Elite-Trainer-Box",
+      "price_from_eur": 210.0,
+      "avg_30d_eur": 213.16,
+      "avg_7d_eur": 238.14,
+      "image_url": "data/images/black-bolt-pc-etb.jpg",
+      "last_scraped": "2026-06-17T10:24:37.508351+00:00"
     },
     {
       "id": "perfect-order-etb",

@@ -46,10 +46,13 @@ def create_session():
     acquire cookies (PHPSESSID, __cf_bm, _cfuvid) before product-page requests.
     """
     sess = None
+    _is_cffi = False
     try:
         from curl_cffi import requests as cffi_requests  # type: ignore
-        sess = cffi_requests.Session(impersonate="chrome")
-        print("  [session] using curl_cffi (chrome impersonation)")
+        # chrome131 has the best Cloudflare bypass record in curl_cffi 0.15+
+        sess = cffi_requests.Session(impersonate="chrome131")
+        _is_cffi = True
+        print("  [session] using curl_cffi (chrome131 impersonation)")
     except ImportError:
         pass
 
@@ -69,13 +72,18 @@ def create_session():
         sess.headers.update(_HEADERS)
         print("  [session] using plain requests")
 
-    # Warm up: get the homepage to acquire Cloudflare cookies
+    # Warm up: get the homepage to acquire Cloudflare cookies.
+    # IMPORTANT: do NOT pass custom headers to curl_cffi — it manages its own
+    # headers as part of the Chrome TLS fingerprint. Overriding them breaks it.
     try:
-        r = sess.get(BASE_URL, headers=_HEADERS, timeout=20)
+        if _is_cffi:
+            r = sess.get(BASE_URL, timeout=20)
+        else:
+            r = sess.get(BASE_URL, headers=_HEADERS, timeout=20)
         print(f"  [session] warmup status: {r.status_code}")
     except Exception as exc:
         print(f"  [session] warmup failed: {exc}")
-    time.sleep(3)
+    time.sleep(1)  # brief settle so cookies are registered before first product request
     return sess
 
 
@@ -119,7 +127,7 @@ _HEADERS = {
     "Referer": "https://www.cardmarket.com/en/Pokemon",
 }
 
-SLEEP_SEC = 4  # polite delay between requests
+SLEEP_SEC = 5  # base delay between requests (randomised +0-3s in practice)
 
 
 # ---------------------------------------------------------------------------
@@ -607,10 +615,14 @@ def fetch_offers_for_product(session, url: str, max_offers: int = 10) -> list[di
     """
     Fetch the top N offers from a filtered Cardmarket product URL.
     The URL should already include the sellerCountry/language query params.
+    Raises RuntimeError on HTTP failure so callers can surface the error.
     """
-    resp = _get(session, url)
+    resp = _get(session, url, retries=2)  # one retry with backoff before giving up
     if not resp:
-        return []
+        raise RuntimeError(
+            "Cardmarket rate-limited this request (429). "
+            "Wait 30–60 seconds then click \u21bb Refresh."
+        )
     soup = BeautifulSoup(resp.text, "html.parser")
     return parse_offers(soup, max_offers=max_offers)
 
@@ -618,19 +630,27 @@ def fetch_offers_for_product(session, url: str, max_offers: int = 10) -> list[di
 def update_all_products(
     countries: list[int] | None = None,
     language: int | None = None,
+    skip_if_fresh_hours: float = 6,
+    session=None,
 ) -> int:
     """
     Refresh prices for every product in products.json.
+    Skips products whose last_scraped is within skip_if_fresh_hours (default 6h)
+    to avoid hammering Cardmarket and hitting rate limits.
     Saves updated products.json and appends to price_history.csv.
     Returns the number of successfully updated products.
     """
+    import random
     with open(PRODUCTS_PATH, encoding="utf-8") as f:
         data = json.load(f)
 
-    session = create_session()
+    if session is None:
+        session = create_session()
     history_rows: list[dict] = []
     timestamp = datetime.now(timezone.utc).isoformat()
+    now_utc = datetime.now(timezone.utc)
     updated = 0
+    skipped_fresh = 0
 
     all_products = data.get("historical_comps", []) + data.get("watchlist", [])
 
@@ -639,11 +659,26 @@ def update_all_products(
         if not url:
             continue
 
+        # Skip if recently scraped
+        last = product.get("last_scraped")
+        if last and skip_if_fresh_hours > 0:
+            try:
+                last_dt = datetime.fromisoformat(last)
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                age_h = (now_utc - last_dt).total_seconds() / 3600
+                if age_h < skip_if_fresh_hours:
+                    skipped_fresh += 1
+                    print(f"  ↷ skipping (fresh {age_h:.1f}h ago): {product['name']}")
+                    continue
+            except ValueError:
+                pass
+
         print(f"Fetching: {product['name']}")
         info = fetch_product_data(session, url, countries, language)
         if not info:
             print("  ! skipped (fetch failed)")
-            time.sleep(SLEEP_SEC)
+            time.sleep(SLEEP_SEC + random.uniform(0, 3))
             continue
 
         p  = info.get("prices", {})
@@ -687,7 +722,7 @@ def update_all_products(
             f"from: €{p.get('from_eur', '–')} | "
             f"BE/DE/NL from: €{pf.get('from_eur', '–')}"
         )
-        time.sleep(SLEEP_SEC)
+        time.sleep(SLEEP_SEC + random.uniform(0, 4))
 
     with open(PRODUCTS_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
@@ -705,7 +740,7 @@ def update_all_products(
                 writer.writeheader()
             writer.writerows(history_rows)
 
-    print(f"\nDone. Updated {updated}/{len(all_products)} products. History → {HISTORY_PATH}")
+    print(f"\nDone. Updated {updated}/{len(all_products)} products (skipped {skipped_fresh} fresh). History \u2192 {HISTORY_PATH}")
     return updated
 
 

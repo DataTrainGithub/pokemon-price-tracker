@@ -10,7 +10,6 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -253,15 +252,7 @@ hr { border-color: #e4e8f4 !important; margin: 1rem 0 !important; }
 .pc-neu   { font-size: 0.8rem; color: #9ca3af; }
 .pc-link  { font-size: 0.7rem; color: #4f5fc4; text-decoration: none; }
 
-/* ── Hide dataframe row-selection checkbox column ── */
-[data-testid="stDataFrame"] [role="rowheader"],
-[data-testid="stDataFrame"] [role="columnheader"]:first-of-type:has(input[type="checkbox"]) {
-    display: none !important;
-    width: 0 !important;
-    min-width: 0 !important;
-    padding: 0 !important;
-}
-/* Make the whole row feel clickable */
+/* ── Make the whole dataframe row feel clickable ────────────────────── */
 [data-testid="stDataFrame"] [role="row"] { cursor: pointer !important; }
 
 /* ── Spinner ── */
@@ -408,6 +399,7 @@ def get_all_products() -> list[dict]:
             p["_from"] = (
                 p.get("price_from_filtered_eur")
                 or p.get("price_from_eur")
+                or p.get("current_price_eur")
             )
             # _roi uses _from; fall back to trend only for ROI estimate if no from-price yet
             msrp = p.get("msrp_eur")
@@ -421,6 +413,41 @@ def get_all_products() -> list[dict]:
 def refresh() -> None:
     get_all_products.clear()
     st.rerun()
+
+
+@st.cache_resource(show_spinner=False)
+def _get_cm_session():
+    """Create and cache a single Cardmarket HTTP session for the lifetime of the server.
+    Uses @st.cache_resource so the object is stored in memory without pickling.
+    """
+    from scraper.cardmarket_scraper import create_session
+    return create_session()
+
+
+def _cm_fetch_with_block_detection(cm_filt: str, offers_key: str,
+                                    offers_ts_key: str, offers_err_key: str) -> None:
+    """Fetch listings; if blocked (403) clear the cached session so next restart gets a fresh one."""
+    from scraper.cardmarket_scraper import fetch_offers_for_product
+    try:
+        off = fetch_offers_for_product(_get_cm_session(), cm_filt, max_offers=10)
+        st.session_state[offers_key] = off
+        st.session_state[offers_ts_key] = datetime.now(timezone.utc)
+        st.session_state.pop(offers_err_key, None)
+    except RuntimeError as exc:
+        msg = str(exc)
+        # 403 = hard Cloudflare block; clear session so it regenerates on next restart
+        if "403" in msg or "blocked" in msg.lower():
+            _get_cm_session.clear()
+            st.session_state[offers_err_key] = (
+                "🚫 Cardmarket has temporarily blocked this IP (Cloudflare 403). "
+                "Wait a few hours, then restart the app and try again."
+            )
+        else:
+            st.session_state[offers_err_key] = msg
+        st.session_state[offers_key] = []
+    except Exception as exc:
+        st.session_state[offers_err_key] = str(exc)
+        st.session_state[offers_key] = []
 
 
 def _price_data_age_hours() -> float | None:
@@ -460,37 +487,69 @@ def froi(v) -> str:
 # ---------------------------------------------------------------------------
 # Header
 # ---------------------------------------------------------------------------
-hc1, hc2, hc3 = st.columns([5, 1, 1])
+hc1, hc2 = st.columns([5, 1])
 with hc1:
-    st.title("Pokémon Sealed Product Price Tracker")
-    st.markdown(
-        '<span class="src-badge">BE · NL · DE &nbsp; | &nbsp; English sealed only</span>',
-        unsafe_allow_html=True,
-    )
+    st.markdown("""
+<div style="
+    background: #e8eaf6;
+    border: 1px solid #d0d4f0;
+    border-radius: 12px;
+    padding: 20px 28px 18px 28px;
+    margin-bottom: 4px;
+">
+  <div style="
+      font-size: 1.45rem;
+      font-weight: 700;
+      color: #2c3354;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      font-family: 'Inter', sans-serif;
+  ">Pokémon Sealed <span style="color:#4f5fc4;">Price Tracker</span></div>
+  <div style="margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap;">
+    <span style="background:#d0d4f0;border-radius:20px;padding:2px 10px;font-size:0.71rem;color:#4b5275;letter-spacing:0.03em;">Belgium</span>
+    <span style="background:#d0d4f0;border-radius:20px;padding:2px 10px;font-size:0.71rem;color:#4b5275;letter-spacing:0.03em;">Netherlands</span>
+    <span style="background:#d0d4f0;border-radius:20px;padding:2px 10px;font-size:0.71rem;color:#4b5275;letter-spacing:0.03em;">Germany</span>
+    <span style="background:#ede9f6;border-radius:20px;padding:2px 10px;font-size:0.71rem;color:#6b5b9e;letter-spacing:0.03em;">English sealed only</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 with hc2:
-    if st.button("Refresh Prices", use_container_width=True,
-                 help="Fetch latest prices from Cardmarket for all products"):
-        _overlay = st.empty()
-        _overlay.markdown(
-            '<div class="refresh-overlay">'
-            '<div class="ro-ring"></div>'
-            '<div class="ro-label">Refreshing prices…</div>'
-            '<div class="ro-sub">Fetching from Cardmarket &mdash; this can take a few minutes</div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
+    if st.button("Update Products", use_container_width=True,
+                 help="Fetch missing images and refresh prices for all products"):
+        _prog = st.progress(0, text="Starting…")
         try:
-            from scraper.cardmarket_scraper import update_all_products
-            n = update_all_products(countries=[2, 7, 23], language=1)
-            _overlay.empty()
+            import json as _json
+            from scraper.cardmarket_scraper import (
+                fetch_product_data, download_image, update_all_products,
+            )
+            _data = _json.load(open(_APP_DIR / "data" / "products.json", encoding="utf-8"))
+            _all_p = _data.get("historical_comps", []) + _data.get("watchlist", [])
+            _missing_img = [p for p in _all_p if not p.get("image_url") and p.get("cardmarket_url")]
+            _sess = _get_cm_session()
+
+            # Step 1 – fetch missing images
+            for _i, _p in enumerate(_missing_img):
+                _prog.progress(
+                    int(_i / max(len(_missing_img), 1) * 40),
+                    text=f"Fetching image {_i+1}/{len(_missing_img)}: {_p['name'][:40]}",
+                )
+                _info = fetch_product_data(_sess, _p["cardmarket_url"])
+                if _info.get("image_url"):
+                    _local = download_image(_info["image_url"], _p.get("id", "unknown"))
+                    _p["image_url"] = _local if _local else _info["image_url"]
+            if _missing_img:
+                _json.dump(_data, open(_APP_DIR / "data" / "products.json", "w", encoding="utf-8"),
+                           indent=2, ensure_ascii=False)
+
+            # Step 2 – update all prices (skip products fetched within last 6h)
+            _prog.progress(40, text="Updating prices for all products…")
+            _n = update_all_products(countries=[2, 7, 23], language=1,
+                                     skip_if_fresh_hours=6, session=_sess)
+            _prog.progress(100, text=f"Done — {_n} products updated")
             refresh()
-            st.success(f"Updated {n} products")
         except Exception as exc:
-            _overlay.empty()
+            _prog.empty()
             st.error(str(exc))
-with hc3:
-    if st.button("Clear cache", use_container_width=True):
-        refresh()
 
 # ── Staleness warning ────────────────────────────────────────────────────────
 _age_h = _price_data_age_hours()
@@ -498,7 +557,7 @@ if _age_h is not None and _age_h > 24:
     _age_label = f"{int(_age_h)}h" if _age_h < 48 else f"{int(_age_h / 24)}d"
     st.warning(
         f"Price data is **{_age_label} old**. "
-        "Click **Refresh Prices** to fetch the latest from Cardmarket."
+        "Click **Update Products** to fetch the latest from Cardmarket."
     )
 
 st.write("")
@@ -507,10 +566,9 @@ all_products = get_all_products()
 # ---------------------------------------------------------------------------
 # TABS
 # ---------------------------------------------------------------------------
-tab_all, tab_roi, tab_hist = st.tabs([
+tab_all, tab_roi = st.tabs([
     "All Products",
     "Historical ROI",
-    "Price History",
 ])
 
 # ==========================================================================
@@ -569,9 +627,10 @@ with tab_all:
         reverse=rev,
     )
 
-    st.caption(f"{len(filt)} of {len(all_products)} products  ·  click a row to view details")
+    st.caption(f"{len(filt)} of {len(all_products)} products")
 
     rows = [{
+        "Image":         _image_to_data_uri(p["image_url"]) if p.get("image_url") else None,
         "Product":       p.get("name", ""),
         "Type":          p.get("type", "—"),
         "MSRP":          p.get("msrp_eur"),
@@ -582,14 +641,14 @@ with tab_all:
         "View":          (p.get("cardmarket_url", "") + _CM_FILTER) if p.get("cardmarket_url") else "",
     } for p in filt]
 
-    # Auto-size for small tables (no empty padding rows); scrollable for large ones
-    _tbl_height = ("content" if len(rows) <= 6 else min(40 + len(rows) * 44, 460)) if rows else 80
+    # Taller rows to show product images; scrollable for large lists
+    _tbl_height = ("content" if len(rows) <= 6 else min(56 + len(rows) * 68, 600)) if rows else 80
 
-    sel_state = st.dataframe(
-        pd.DataFrame(rows) if rows else pd.DataFrame(columns=["Product"]),
+    st.dataframe(
+        pd.DataFrame(rows) if rows else pd.DataFrame(columns=["Image", "Product"]),
         use_container_width=True, hide_index=True, height=_tbl_height,
-        on_select="rerun", selection_mode="single-row",
         column_config={
+            "Image":         st.column_config.ImageColumn("Image", width="small"),
             "Product":       st.column_config.TextColumn("Product", width="large"),
             "Type":          st.column_config.TextColumn("Type", width="small"),
             "MSRP":          st.column_config.NumberColumn("MSRP", format="€%.2f", width="small"),
@@ -601,22 +660,29 @@ with tab_all:
         },
     )
 
-    # Persist selection in session_state so detail survives filter changes
-    _sel_rows = (sel_state.selection.rows if sel_state and sel_state.selection else [])
-    if _sel_rows and _sel_rows[0] < len(filt):
-        st.session_state["_selected_product_id"] = filt[_sel_rows[0]].get("id", "")
+    # Product selector — use the search box value if a specific product is chosen,
+    # otherwise show a selectbox to pick which product to view details for.
+    _sel_name = srch if srch else st.session_state.get("_detail_select", "")
+
+    if not srch:
+        _det_options = [""] + [p["name"] for p in filt]
+        _det_idx = _det_options.index(_sel_name) if _sel_name in _det_options else 0
+        _sel_name = st.selectbox(
+            "View details for…",
+            options=_det_options,
+            index=_det_idx,
+            format_func=lambda x: "Select a product to view details…" if x == "" else x,
+            label_visibility="collapsed",
+            key="_detail_select",
+        )
+    else:
+        # Clear the separate selector when search box already picks a product
+        st.session_state["_detail_select"] = ""
 
     # Resolve product to show detail for
-    _sel_id = st.session_state.get("_selected_product_id")
-    if _sel_id:
-        det = next((p for p in filt if p.get("id") == _sel_id), None)
-        # If the selection is no longer in the filtered list, fall back to single-result auto-open
-        if det is None and len(filt) == 1:
-            det = filt[0]
-    elif len(filt) == 1:
+    det = next((p for p in filt if p["name"] == _sel_name), None)
+    if det is None and len(filt) == 1:
         det = filt[0]
-    else:
-        det = None
 
     if det:
         st.write("")
@@ -702,21 +768,17 @@ with tab_all:
             else:
                 offers_key = f"_offers_{det.get('id', '')}"
                 offers_ts_key = f"_offers_ts_{det.get('id', '')}"
+                offers_err_key = f"_fetch_err_{det.get('id', '')}"
 
-                # Auto-fetch on first open; show refresh button for subsequent reloads
+                def _do_fetch():
+                    _cm_fetch_with_block_detection(
+                        cm_filt, offers_key, offers_ts_key, offers_err_key
+                    )
+
+                # Auto-fetch on first open
                 if offers_key not in st.session_state:
                     with st.spinner("Loading listings…"):
-                        try:
-                            from scraper.cardmarket_scraper import (
-                                create_session, fetch_offers_for_product,
-                            )
-                            sess = create_session()
-                            off = fetch_offers_for_product(sess, cm_filt, max_offers=10)
-                            st.session_state[offers_key] = off
-                            st.session_state[offers_ts_key] = datetime.now(timezone.utc)
-                        except Exception as exc:
-                            st.error(f"Could not load listings: {exc}")
-                            st.session_state[offers_key] = []
+                        _do_fetch()
 
                 # Header row: title + refresh button + timestamp
                 _lh1, _lh2 = st.columns([4, 1])
@@ -729,20 +791,12 @@ with tab_all:
                     if st.button("↻ Refresh", key=f"reload_offers_{det.get('id', '')}",
                                  use_container_width=True, help="Re-fetch listings from Cardmarket"):
                         with st.spinner("Refreshing listings…"):
-                            try:
-                                from scraper.cardmarket_scraper import (
-                                    create_session, fetch_offers_for_product,
-                                )
-                                sess = create_session()
-                                off = fetch_offers_for_product(sess, cm_filt, max_offers=10)
-                                st.session_state[offers_key] = off
-                                st.session_state[offers_ts_key] = datetime.now(timezone.utc)
-                                st.rerun()
-                            except Exception as exc:
-                                st.error(f"Could not refresh listings: {exc}")
+                            _do_fetch()
 
                 offers = st.session_state.get(offers_key)
-                if not offers:
+                if st.session_state.get(offers_err_key):
+                    st.error(f"Could not load listings: {st.session_state[offers_err_key]}")
+                elif not offers:
                     st.info("No listings found for this filter.")
                 else:
                     rows_html = ""
@@ -896,89 +950,3 @@ with tab_roi:
                 },
             )
 
-# ==========================================================================
-# TAB 4 – PRICE HISTORY
-# ==========================================================================
-with tab_hist:
-    if not HISTORY_PATH.exists():
-        st.info(
-            "No price history yet.\n\n"
-            "Run **Refresh Prices** to start building price history, "
-            "or from terminal:\n```\npython scraper/cardmarket_scraper.py\n```"
-        )
-    else:
-        hist_df = pd.read_csv(HISTORY_PATH, parse_dates=["timestamp"])
-        id_to_name = {p["id"]: p["name"] for p in all_products if "id" in p}
-
-        pid_list  = hist_df["product_id"].unique().tolist()
-        name_list = [id_to_name.get(pid, pid) for pid in pid_list]
-
-        hc1, hc2 = st.columns([3, 2])
-        with hc1:
-            sel_hn  = st.selectbox("Product", name_list, key="hist_prod")
-            sel_hid = pid_list[name_list.index(sel_hn)]
-        with hc2:
-            M_LABELS = {
-                "from_filtered_eur": "From (BE/NL/DE)",
-                "from_eur":          "From (Global)",
-                "price_trend_eur":   "Price Trend",
-                "avg_30d_eur":       "30d Average",
-                "avg_7d_eur":        "7d Average",
-            }
-            sel_m = st.multiselect(
-                "Metrics", list(M_LABELS.keys()),
-                default=["from_filtered_eur", "from_eur"],
-                format_func=lambda x: M_LABELS.get(x, x),
-                key="hist_metrics",
-            )
-
-        ph = hist_df[hist_df["product_id"] == sel_hid].sort_values("timestamp")
-        if ph.empty:
-            st.info("No data yet for this product.")
-        else:
-            COLORS = {
-                "from_filtered_eur": "#7b8cde",
-                "from_eur":          "#5a9e78",
-                "price_trend_eur":   "#e8a87c",
-                "avg_30d_eur":       "#a78bca",
-                "avg_7d_eur":        "#74b8c8",
-            }
-            fig = go.Figure()
-            for m in sel_m:
-                if m in ph.columns:
-                    fig.add_trace(go.Scatter(
-                        x=ph["timestamp"], y=ph[m],
-                        name=M_LABELS.get(m, m),
-                        mode="lines+markers",
-                        line=dict(color=COLORS.get(m, "#aaa"), width=2),
-                        marker=dict(size=5),
-                    ))
-            fig.update_layout(
-                title=dict(text=sel_hn, font=dict(size=13, color="#2c3354")),
-                xaxis=dict(
-                    title="Date", gridcolor="#e8ebf5",
-                    linecolor="#e4e8f4", tickfont=dict(size=11, color="#7c87a8"),
-                ),
-                yaxis=dict(
-                    title="Price (€)", gridcolor="#e8ebf5",
-                    linecolor="#e4e8f4", tickfont=dict(size=11, color="#7c87a8"),
-                ),
-                hovermode="x unified",
-                height=420,
-                margin=dict(l=0, t=40, r=0, b=0),
-                plot_bgcolor="#ffffff",
-                paper_bgcolor="#f7f8fc",
-                font=dict(family="Inter, sans-serif", color="#4b5275"),
-                legend=dict(
-                    bgcolor="#ffffff",
-                    bordercolor="#e4e8f4",
-                    borderwidth=1,
-                    font=dict(size=11),
-                ),
-            )
-            st.plotly_chart(fig, use_container_width=True)
-            st.caption(
-                f"{len(ph)} scrape runs  ·  "
-                f"first: {ph['timestamp'].min().date()}  ·  "
-                f"latest: {ph['timestamp'].max().date()}"
-            )
