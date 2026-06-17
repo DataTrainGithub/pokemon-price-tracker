@@ -1,0 +1,10 @@
+streamlit
+pandas
+plotly
+requests
+beautifulsoup4
+lxml
+cloudscraper
+curl-cffi
+playwright
+playwright-stealth
