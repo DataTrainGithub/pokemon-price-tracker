@@ -22,11 +22,18 @@ IMAGES_DIR   = Path(__file__).parent / "data" / "images"
 _CM_FILTER = "?sellerCountry=2,7,23&language=1"
 
 
+_APP_DIR = Path(__file__).parent
+
+
 def _image_to_data_uri(path_or_url: str) -> str:
     """Convert a local image file to a base64 data URI for Streamlit ImageColumn.
-    If it's a URL (not a local path), return it as-is.
+    Handles both POSIX and Windows-style relative paths stored in products.json.
+    If it's a remote URL or the file doesn't exist, return the value as-is.
     """
-    p = Path(path_or_url)
+    # Normalise backslashes so Windows-saved paths work on Linux (Streamlit Cloud)
+    normalised = path_or_url.replace("\\", "/")
+    # Resolve relative to the app directory
+    p = (_APP_DIR / normalised).resolve()
     if p.exists():
         mime = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
         return f"data:{mime};base64,{base64.b64encode(p.read_bytes()).decode()}"

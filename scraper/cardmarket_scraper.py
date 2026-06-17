@@ -279,7 +279,9 @@ def download_image(image_url: str, product_id: str) -> str | None:
         )
         if r.status_code == 200 and r.content:
             dest.write_bytes(r.content)
-            return str(dest)
+            # Return POSIX-style path relative to project root (forward slashes,
+            # works on both Windows and Linux / Streamlit Cloud)
+            return dest.relative_to(DATA_DIR.parent).as_posix()
         print(f"  ! image download {r.status_code}: {image_url[:80]}")
     except Exception as exc:
         print(f"  ! image download failed: {exc}")
