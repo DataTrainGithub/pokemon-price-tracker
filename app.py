@@ -6,7 +6,7 @@ RUN:  streamlit run app.py
 import base64
 import json
 import sys
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -396,6 +396,27 @@ def refresh() -> None:
     st.rerun()
 
 
+def _price_data_age_hours() -> float | None:
+    """Return hours since the most recent last_scraped timestamp across all products."""
+    try:
+        data = _load_json()
+        timestamps = [
+            p.get("last_scraped")
+            for section in ("historical_comps", "watchlist")
+            for p in data.get(section, [])
+            if p.get("last_scraped")
+        ]
+        if not timestamps:
+            return None
+        latest = max(timestamps)
+        dt = datetime.fromisoformat(latest)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+    except Exception:
+        return None
+
+
 def feur(v) -> str:
     if v is None:
         return "—"
@@ -443,6 +464,15 @@ with hc2:
 with hc3:
     if st.button("Clear cache", use_container_width=True):
         refresh()
+
+# ── Staleness warning ────────────────────────────────────────────────────────
+_age_h = _price_data_age_hours()
+if _age_h is not None and _age_h > 24:
+    _age_label = f"{int(_age_h)}h" if _age_h < 48 else f"{int(_age_h / 24)}d"
+    st.warning(
+        f"Price data is **{_age_label} old**. "
+        "Click **Refresh Prices** to fetch the latest from Cardmarket."
+    )
 
 st.write("")
 all_products = get_all_products()
@@ -527,7 +557,7 @@ with tab_all:
     } for p in filt]
 
     # Auto-size for small tables (no empty padding rows); scrollable for large ones
-    _tbl_height = (None if len(rows) <= 6 else min(40 + len(rows) * 44, 460)) if rows else 80
+    _tbl_height = ("content" if len(rows) <= 6 else min(40 + len(rows) * 44, 460)) if rows else 80
 
     sel_state = st.dataframe(
         pd.DataFrame(rows) if rows else pd.DataFrame(columns=["Product"]),
@@ -641,33 +671,53 @@ with tab_all:
                     st.caption("  ·  ".join(caps))
 
             st.divider()
-            st.markdown("**Current Listings** &nbsp;—&nbsp; Belgium · Netherlands · Germany · English sealed")
 
             if not cm_filt:
                 st.warning("No Cardmarket URL configured for this product.")
             else:
-                oc1, _ = st.columns([1, 4])
-                with oc1:
-                    load_btn = st.button("Load listings", key=f"load_offers_{det.get('id', '')}")
-
                 offers_key = f"_offers_{det.get('id', '')}"
-                if load_btn:
-                    with st.spinner("Fetching from Cardmarket…"):
+                offers_ts_key = f"_offers_ts_{det.get('id', '')}"
+
+                # Auto-fetch on first open; show refresh button for subsequent reloads
+                if offers_key not in st.session_state:
+                    with st.spinner("Loading listings…"):
                         try:
                             from scraper.cardmarket_scraper import (
                                 create_session, fetch_offers_for_product,
                             )
                             sess = create_session()
-                            off  = fetch_offers_for_product(sess, cm_filt, max_offers=10)
+                            off = fetch_offers_for_product(sess, cm_filt, max_offers=10)
                             st.session_state[offers_key] = off
+                            st.session_state[offers_ts_key] = datetime.now(timezone.utc)
                         except Exception as exc:
                             st.error(f"Could not load listings: {exc}")
                             st.session_state[offers_key] = []
 
+                # Header row: title + refresh button + timestamp
+                _lh1, _lh2 = st.columns([4, 1])
+                with _lh1:
+                    st.markdown("**Current Listings** &nbsp;—&nbsp; Belgium · Netherlands · Germany · English sealed")
+                    _ts = st.session_state.get(offers_ts_key)
+                    if _ts:
+                        st.caption(f"Fetched at {_ts.strftime('%H:%M:%S')} UTC")
+                with _lh2:
+                    if st.button("↻ Refresh", key=f"reload_offers_{det.get('id', '')}",
+                                 use_container_width=True, help="Re-fetch listings from Cardmarket"):
+                        with st.spinner("Refreshing listings…"):
+                            try:
+                                from scraper.cardmarket_scraper import (
+                                    create_session, fetch_offers_for_product,
+                                )
+                                sess = create_session()
+                                off = fetch_offers_for_product(sess, cm_filt, max_offers=10)
+                                st.session_state[offers_key] = off
+                                st.session_state[offers_ts_key] = datetime.now(timezone.utc)
+                                st.rerun()
+                            except Exception as exc:
+                                st.error(f"Could not refresh listings: {exc}")
+
                 offers = st.session_state.get(offers_key)
-                if offers is None:
-                    st.caption("Click 'Load listings' to fetch current offers.")
-                elif not offers:
+                if not offers:
                     st.info("No listings found for this filter.")
                 else:
                     rows_html = ""
