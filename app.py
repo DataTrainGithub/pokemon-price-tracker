@@ -189,26 +189,28 @@ hr { border-color: #e4e8f4 !important; margin: 1rem 0 !important; }
 }
 
 /* ── Offers table ── */
-.ot { border-collapse: collapse; width: 100%; border-radius: 8px; overflow: hidden; }
+.ot-wrap { border: 1px solid #eceef6; border-radius: 10px; overflow: hidden; }
+.ot { border-collapse: collapse; width: 100%; }
 .ot th {
-    background: #f0f2fb;
-    color: #4b5275;
-    font-size: 0.7rem;
+    background: #f7f8fc;
+    color: #9ca3af;
+    font-size: 0.67rem;
     font-weight: 600;
-    padding: 7px 12px;
+    padding: 6px 12px;
     text-align: left;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    border-bottom: 1px solid #e4e8f4;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid #eceef6;
 }
 .ot td {
     font-size: 0.78rem;
-    padding: 6px 12px;
-    border-bottom: 1px solid #f0f2f8;
+    padding: 7px 12px;
+    border-bottom: 1px solid #f4f5fa;
     color: #2c3354;
     background: #ffffff;
 }
-.ot tr:hover td { background: #f7f8fd; }
+.ot tr:last-child td { border-bottom: none; }
+.ot tr:hover td { background: #fafbff; }
 
 /* ── Product cards (ROI visual grid) ── */
 .pc-card {
@@ -545,7 +547,6 @@ with tab_all:
     st.caption(f"{len(filt)} of {len(all_products)} products  ·  click a row to view details")
 
     rows = [{
-        "":              _image_to_data_uri(p["image_url"]) if p.get("image_url") else "",
         "Product":       p.get("name", ""),
         "Type":          p.get("type", "—"),
         "MSRP":          p.get("msrp_eur"),
@@ -564,7 +565,6 @@ with tab_all:
         use_container_width=True, hide_index=True, height=_tbl_height,
         on_select="rerun", selection_mode="single-row",
         column_config={
-            "":              st.column_config.ImageColumn("", width="small"),
             "Product":       st.column_config.TextColumn("Product", width="large"),
             "Type":          st.column_config.TextColumn("Type", width="small"),
             "MSRP":          st.column_config.NumberColumn("MSRP", format="€%.2f", width="small"),
@@ -742,14 +742,14 @@ with tab_all:
                             f'</tr>'
                         )
                     st.markdown(
-                        '<table class="ot"><thead><tr>'
+                        '<div class="ot-wrap"><table class="ot"><thead><tr>'
                         '<th>Seller</th>'
                         '<th style="text-align:center">Item Country</th>'
                         '<th style="text-align:center">Language</th>'
                         '<th>Condition</th>'
                         '<th style="text-align:right">Price</th>'
                         '<th style="text-align:center">Qty</th>'
-                        f'</tr></thead><tbody>{rows_html}</tbody></table>',
+                        f'</tr></thead><tbody>{rows_html}</tbody></table></div>',
                         unsafe_allow_html=True,
                     )
                     st.caption(f"{len(offers)} listings shown")
@@ -842,7 +842,6 @@ with tab_roi:
         # ── Full sortable table ───────────────────────────────────────────
         st.markdown("#### All historical products")
         roi_rows = [{
-            "":              _image_to_data_uri(p["image_url"]) if p.get("image_url") else "",
             "Product":       p.get("name", ""),
             "Type":          p.get("type", "—"),
             "MSRP":          p.get("msrp_eur"),
@@ -858,7 +857,6 @@ with tab_roi:
                 pd.DataFrame(roi_rows),
                 use_container_width=True, hide_index=True, height=480,
                 column_config={
-                    "":              st.column_config.ImageColumn("", width="small"),
                     "Product":       st.column_config.TextColumn("Product", width="large"),
                     "Type":          st.column_config.TextColumn("Type", width="small"),
                     "MSRP":          st.column_config.NumberColumn("MSRP", format="€%.2f", width="small"),
