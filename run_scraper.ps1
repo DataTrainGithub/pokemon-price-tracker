@@ -1,7 +1,9 @@
 # run_scraper.ps1 — runs the price scraper then commits & pushes to GitHub
 # Called by Windows Task Scheduler daily at 03:00
 
-# Force UTF-8 output so the log is readable in any text editor
+# Force UTF-8 for Python and PowerShell output
+$env:PYTHONUTF8    = "1"
+$env:PYTHONIOENCODING = "utf-8"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
@@ -43,7 +45,7 @@ Set-Location $project
 
 $changed = git status --porcelain data/products.json
 if ($changed) {
-    $msg = "chore: auto-update prices $(Get-Date -Format 'yyyy-MM-dd HH:mm') (local)"
+    $msg = "chore: auto-update prices $(Get-Date -Format 'yyyy-MM-dd HH:mm') local"
     git add data/products.json 2>&1 | ForEach-Object { [System.IO.File]::AppendAllText($log, "$_`n", $utf8NoBom) }
     git commit -m $msg      2>&1 | ForEach-Object { [System.IO.File]::AppendAllText($log, "$_`n", $utf8NoBom) }
     git push                2>&1 | ForEach-Object { [System.IO.File]::AppendAllText($log, "$_`n", $utf8NoBom) }

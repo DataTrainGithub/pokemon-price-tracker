@@ -754,7 +754,7 @@ def update_all_products(
                 writer.writeheader()
             writer.writerows(history_rows)
 
-    print(f"\nDone. Updated {updated}/{len(all_products)} products (skipped {skipped_fresh} fresh). History \u2192 {HISTORY_PATH}")
+    print(f"\nDone. Updated {updated}/{len(all_products)} products (skipped {skipped_fresh} fresh). History -> {HISTORY_PATH}")
     return updated
 
 
