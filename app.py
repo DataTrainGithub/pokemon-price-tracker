@@ -766,8 +766,8 @@ with tab_all:
             if not cm_filt:
                 st.warning("No Cardmarket URL configured for this product.")
             else:
-                offers_key = f"_offers_{det.get('id', '')}"
-                offers_ts_key = f"_offers_ts_{det.get('id', '')}"
+                offers_key     = f"_offers_{det.get('id', '')}"
+                offers_ts_key  = f"_offers_ts_{det.get('id', '')}"
                 offers_err_key = f"_fetch_err_{det.get('id', '')}"
 
                 def _do_fetch():
@@ -775,26 +775,47 @@ with tab_all:
                         cm_filt, offers_key, offers_ts_key, offers_err_key
                     )
 
-                # Auto-fetch on first open
-                if offers_key not in st.session_state:
+                # Determine source: live session_state > cached in products.json
+                _live_fetched = offers_key in st.session_state
+                _cached_offers = det.get("listings")
+                _cached_ts_raw = det.get("listings_scraped_at")
+
+                # Only auto-fetch live if no cached snapshot available
+                if not _live_fetched and not _cached_offers:
                     with st.spinner("Loading listings…"):
                         _do_fetch()
+                    _live_fetched = True
+
+                # Determine what to display
+                if _live_fetched and offers_key in st.session_state:
+                    offers       = st.session_state[offers_key]
+                    _offers_src  = "live"
+                    _offers_ts   = st.session_state.get(offers_ts_key)
+                else:
+                    offers       = _cached_offers or []
+                    _offers_src  = "snapshot"
+                    _offers_ts   = None
 
                 # Header row: title + refresh button + timestamp
                 _lh1, _lh2 = st.columns([4, 1])
                 with _lh1:
                     st.markdown("**Current Listings** &nbsp;—&nbsp; Belgium · Netherlands · Germany · English sealed")
-                    _ts = st.session_state.get(offers_ts_key)
-                    if _ts:
-                        st.caption(f"Fetched at {_ts.strftime('%H:%M:%S')} UTC")
+                    if _offers_src == "live" and _offers_ts:
+                        st.caption(f"Live — fetched at {_offers_ts.strftime('%H:%M:%S')} UTC")
+                    elif _offers_src == "snapshot" and _cached_ts_raw:
+                        try:
+                            _snap_dt = datetime.fromisoformat(_cached_ts_raw).strftime("%Y-%m-%d %H:%M UTC")
+                        except ValueError:
+                            _snap_dt = _cached_ts_raw
+                        st.caption(f"Snapshot from {_snap_dt} — click ↻ for live data")
                 with _lh2:
                     if st.button("↻ Refresh", key=f"reload_offers_{det.get('id', '')}",
-                                 use_container_width=True, help="Re-fetch listings from Cardmarket"):
+                                 use_container_width=True, help="Re-fetch listings live from Cardmarket"):
                         with st.spinner("Refreshing listings…"):
                             _do_fetch()
+                        st.rerun()
 
-                offers = st.session_state.get(offers_key)
-                if st.session_state.get(offers_err_key):
+                if st.session_state.get(offers_err_key) and not offers:
                     st.error(f"Could not load listings: {st.session_state[offers_err_key]}")
                 elif not offers:
                     st.info("No listings found for this filter.")

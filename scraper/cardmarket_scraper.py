@@ -704,6 +704,20 @@ def update_all_products(
             product["available_filtered"] = pf["available_items"]
         product["last_scraped"] = timestamp
 
+        # Fetch and cache top 10 listings (BE/NL/DE · English) so the
+        # Streamlit Cloud deployment can display them without live requests.
+        if countries and language:
+            try:
+                filtered_url = _build_filtered_url(url, countries, language)
+                offers = fetch_offers_for_product(session, filtered_url, max_offers=10)
+                if offers:
+                    product["listings"] = offers
+                    product["listings_scraped_at"] = timestamp
+                    print(f"  → cached {len(offers)} listings")
+            except Exception as exc:
+                print(f"  ! listings fetch failed: {exc}")
+            time.sleep(SLEEP_SEC + random.uniform(0, 2))
+
         history_rows.append({
             "timestamp":          timestamp,
             "product_id":         product.get("id", ""),
